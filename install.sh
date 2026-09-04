@@ -148,6 +148,7 @@ box_row "Install dependencies"  "system + python"
 box_row "Download MobileAgent"  "git clone"
 box_row "Create virtual env"    "isolated python"
 box_row "Install packages"      "pip, one by one"
+box_row "Register harness"      "importable anywhere"
 box_row "Show run commands"     "→ copy & paste"
 box_bot
 printf "\n"
@@ -368,6 +369,13 @@ else
     info "No Python packages to install (empty requirements.txt)"
 fi
 
+# Register the package itself (pip install -e .) so `python -m harness`
+# and `python telegram_bot.py` work from ANY directory.
+run_quiet "registering harness package (pip install -e .)…" $PYTHON -m pip install -e . -q || {
+    warn "package registration failed — run 'python -m harness' from the parent directory instead"
+}
+ok "harness registered — 'python -m harness' works from anywhere"
+
 end_phase
 
 # ── Phase 7 · Finish ────────────────────────────────────────────────
@@ -403,7 +411,7 @@ printf "    ${GREEN}%-31s${NC} ${DIM}# %s${NC}\n" "python -m harness web 8080"  
 printf "    ${GREEN}%-31s${NC} ${DIM}# %s${NC}\n" "python -m harness telegram TOK" "Telegram bot"
 printf "    ${GREEN}%-31s${NC} ${DIM}# %s${NC}\n" "python -m harness all"          "Web + Telegram"
 printf "\n"
-printf "  ${DIM}✦ After install, copy the 'cd' + 'source' lines above and you're off.${NC}\n"
+printf "  ${DIM}✦ The harness package is registered, so you can run it from any folder.${NC}\n"
 printf "  ${DIM}✦ Enjoying Harness? Star the repo: github.com/1dev-hridoy/MobileAgent${NC}\n"
 printf "\n"
 

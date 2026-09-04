@@ -56,8 +56,11 @@ git clone https://github.com/1dev-hridoy/MobileAgent.git
 cd MobileAgent/harness
 python -m venv venv && source venv/bin/activate
 pip install -r requirements.txt
+pip install -e .          # register the 'harness' package so `python -m harness` works from any folder
 python -m harness
 ```
+
+> The installer (and the manual setup above) register the package with `pip install -e .`, so `python -m harness`, `python telegram_bot.py`, and `python web.py` all work from any directory — no need to be inside the repo folder.
 
 ## Available Tools (27)
 

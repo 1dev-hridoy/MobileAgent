@@ -3,7 +3,12 @@ Telegram bot — remote phone control via text messages.
 """
 
 import sys
+import os
 import threading
+
+# Make the harness package importable when run as a plain script (python telegram_bot.py)
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from harness.agent import agent
 
 

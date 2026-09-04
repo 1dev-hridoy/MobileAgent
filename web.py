@@ -2,7 +2,13 @@
 Flask web server — provides the glassmorphic chat UI and REST API.
 """
 
+import os
+import sys
 import json
+
+# Make the harness package importable when run as a plain script (python web.py)
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from flask import Flask, request, jsonify, render_template_string
 from harness.agent import agent
 from harness.config import WEB_HOST, WEB_PORT

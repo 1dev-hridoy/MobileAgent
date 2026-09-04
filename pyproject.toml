@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=77.0.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "harness"
+version = "2.0.0"
+description = "⬡ Harness — Mobile Agent: control your phone via natural language"
+readme = "README.md"
+requires-python = ">=3.8"
+license = "MIT"
+dependencies = [
+    "cactus-needle>=2.0.11",
+    "flask>=3.0.0",
+    "pyTelegramBotAPI>=4.12.0",
+    "pydantic>=2.0.0",
+    "waitress>=3.0.0",
+]
+
+# Flat layout: the repo root IS the `harness` package, and the tools
+# sub-package lives in ./tools. Map them explicitly so `pip install -e .`
+# registers `harness` as importable from any directory.
+[tool.setuptools]
+package-dir = { "harness" = "." }
+packages = ["harness", "harness.tools"]
