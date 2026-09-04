@@ -107,6 +107,22 @@ random_tip() {
     printf "  ${DIM}✦ %s${NC}\n" "${TIPS[$idx]}"
 }
 
+# ── Size helpers ──────────────────────────────────────────────────────
+human_size() {
+    local bytes=$1
+    if [ -z "$bytes" ] || [ "$bytes" -eq 0 ] 2>/dev/null; then
+        echo "0 B"
+        return
+    fi
+    awk "BEGIN {
+        b = $bytes
+        if (b >= 1073741824) printf \"%.1f GB\", b/1073741824
+        else if (b >= 1048576) printf \"%.1f MB\", b/1048576
+        else if (b >= 1024) printf \"%.1f KB\", b/1024
+        else printf \"%d B\", b
+    }"
+}
+
 # ── Detect environment ──────────────────────────────────────────────
 IS_TERMUX=false
 [ -d "/data/data/com.termux" ] && IS_TERMUX=true
@@ -124,8 +140,59 @@ else
     esac
 fi
 
-DISK_FREE=$(df -h "$HOME" 2>/dev/null | awk 'NR==2 {print $4}')
-if [ -z "$DISK_FREE" ]; then DISK_FREE="?"; fi
+# Disk info: total, used, free
+DISK_LINE=$(df -h "$HOME" 2>/dev/null | awk 'NR==2 {print $2, $3, $4}')
+DISK_TOTAL=$(echo "$DISK_LINE" | awk '{print $1}')
+DISK_USED=$(echo "$DISK_LINE" | awk '{print $2}')
+DISK_FREE=$(echo "$DISK_LINE" | awk '{print $3}')
+[ -z "$DISK_TOTAL" ] && DISK_TOTAL="?"
+[ -z "$DISK_USED" ]  && DISK_USED="?"
+[ -z "$DISK_FREE" ]  && DISK_FREE="?"
+
+# Disk info in bytes for calculations (try -B1 first, fall back to -k)
+DISK_TOTAL_B=$(df -B1 "$HOME" 2>/dev/null | awk 'NR==2 {print $2}')
+DISK_USED_B=$(df -B1 "$HOME" 2>/dev/null | awk 'NR==2 {print $3}')
+DISK_FREE_B=$(df -B1 "$HOME" 2>/dev/null | awk 'NR==2 {print $4}')
+if [ -z "$DISK_TOTAL_B" ] || [ "$DISK_TOTAL_B" = "0" ] 2>/dev/null; then
+    # macOS fallback: df -k gives values in 1K blocks
+    DISK_TOTAL_B=$(df -k "$HOME" 2>/dev/null | awk 'NR==2 {print $2 * 1024}')
+    DISK_USED_B=$(df -k "$HOME" 2>/dev/null | awk 'NR==2 {print $3 * 1024}')
+    DISK_FREE_B=$(df -k "$HOME" 2>/dev/null | awk 'NR==2 {print $4 * 1024}')
+fi
+[ -z "$DISK_TOTAL_B" ] && DISK_TOTAL_B=0
+[ -z "$DISK_USED_B" ]  && DISK_USED_B=0
+[ -z "$DISK_FREE_B" ]  && DISK_FREE_B=0
+
+# RAM info
+RAM_TOTAL=""
+RAM_AVAIL=""
+if [ -f /proc/meminfo ]; then
+    RAM_TOTAL=$(awk '/^MemTotal:/ {print $2}' /proc/meminfo)
+    RAM_AVAIL=$(awk '/^MemAvailable:/ {print $2}' /proc/meminfo)
+    [ -z "$RAM_AVAIL" ] && RAM_AVAIL=$(awk '/^MemFree:/ {print $2}' /proc/meminfo)
+    # Values are in kB
+    [ -n "$RAM_TOTAL" ] && RAM_TOTAL_HUMAN=$(human_size $((RAM_TOTAL * 1024)))
+    [ -n "$RAM_AVAIL" ] && RAM_AVAIL_HUMAN=$(human_size $((RAM_AVAIL * 1024)))
+fi
+
+# Python version (early detection)
+PYTHON_VER=""
+if command -v python3 >/dev/null 2>&1; then
+    PYTHON_VER=$(python3 --version 2>&1 | awk '{print $2}')
+elif command -v python >/dev/null 2>&1; then
+    PYTHON_VER=$(python --version 2>&1 | awk '{print $2}')
+fi
+
+# Python version (early detection — needed for package analysis)
+PYTHON=""
+PYTHON_VER=""
+if command -v python3 >/dev/null 2>&1; then
+    PYTHON=python3
+    PYTHON_VER=$(python3 --version 2>&1 | awk '{print $2}')
+elif command -v python >/dev/null 2>&1; then
+    PYTHON=python
+    PYTHON_VER=$(python --version 2>&1 | awk '{print $2}')
+fi
 
 INSTALL_DIR="$HOME/harness"
 REPO_URL="https://github.com/1dev-hridoy/MobileAgent.git"
@@ -157,11 +224,23 @@ printf "\n"
 begin_phase "Environment detection & system checks"
 
 box_top
-box_title "ENVIRONMENT"
+box_title "SYSTEM INFO"
 box_row "Platform"      "$PLATFORM"
 box_row "Architecture"  "$ARCH"
+box_row "Python"        "${PYTHON_VER:-not found}"
 box_row "Install dir"   "$INSTALL_DIR"
-box_row "Disk free"     "$DISK_FREE"
+box_bot
+printf "\n"
+
+box_top
+box_title "STORAGE"
+box_row "Total"         "$DISK_TOTAL"
+box_row "Used"          "$DISK_USED"
+box_row "Free"          "$DISK_FREE"
+if [ -n "$RAM_TOTAL_HUMAN" ]; then
+    box_row "RAM total"     "$RAM_TOTAL_HUMAN"
+    box_row "RAM available" "${RAM_AVAIL_HUMAN:-?}"
+fi
 box_bot
 printf "\n"
 
@@ -180,6 +259,108 @@ if command -v curl >/dev/null 2>&1; then
     esac
 else
     warn "curl: not found — skipping network check"
+fi
+
+# ── Package analysis ────────────────────────────────────────────────
+info "Analyzing packages before install…"
+
+DEPS=()
+if [ -f "requirements.txt" ]; then
+    while IFS= read -r line || [ -n "$line" ]; do
+        case "$line" in
+            ""|\#*) continue ;;
+        esac
+        DEPS+=("$line")
+    done < requirements.txt
+else
+    DEPS=(cactus-needle flask pyTelegramBotAPI pydantic waitress)
+fi
+
+# Download packages to a temp dir to measure sizes
+ANALYSIS_DIR=$(mktemp -d 2>/dev/null || echo "/tmp/harness-analysis-$$")
+mkdir -p "$ANALYSIS_DIR"
+
+TOTAL_DL_BYTES=0
+PKG_SIZES=()
+PKG_NAMES=()
+PKG_VERSIONS=()
+
+printf "\n"
+printf "  ${BOLD}${CYAN}▶${NC} Downloading ${#DEPS[@]} package(s) to measure sizes…\n\n"
+
+for spec in "${DEPS[@]}"; do
+    base=$(printf '%s' "$spec" | sed 's/[\[;].*$//; s/[<>=!~].*$//')
+
+    # Download the wheel/sdist to temp dir
+    run_quiet "downloading ${base}…" $PYTHON -m pip download "$spec" \
+        --no-cache-dir -d "$ANALYSIS_DIR" --quiet 2>/dev/null || true
+
+    # Find the downloaded file(s) for this package and sum their sizes
+    pkg_bytes=0
+    for f in "$ANALYSIS_DIR"/${base}[-_]* "$ANALYSIS_DIR"/${base}.*; do
+        [ -f "$f" ] || continue
+        fsize=$(stat -c%s "$f" 2>/dev/null || stat -f%z "$f" 2>/dev/null || echo 0)
+        pkg_bytes=$((pkg_bytes + fsize))
+    done
+
+    # Get installed version
+    ver=""
+    if [ -n "$VENV_DIR" ] && [ -f "$VENV_DIR/bin/activate" ]; then
+        ver=$(. "$VENV_DIR/bin/activate" 2>/dev/null && $PYTHON -c "import importlib.metadata as m; print(m.version('${base}'))" 2>/dev/null || true)
+    fi
+    [ -z "$ver" ] && ver=$(pip show "$base" 2>/dev/null | awk '/^Version:/ {print $2}')
+    [ -z "$ver" ] && ver="latest"
+
+    TOTAL_DL_BYTES=$((TOTAL_DL_BYTES + pkg_bytes))
+    PKG_SIZES+=("$pkg_bytes")
+    PKG_NAMES+=("$base")
+    PKG_VERSIONS+=("$ver")
+
+    printf "  ${GREEN}✔${NC} %-20s ${DIM}%s${NC}  ${YELLOW}%s${NC}\n" "$base" "$ver" "$(human_size "$pkg_bytes")"
+done
+
+# Also download dependencies to get full picture
+DEP_DL_BYTES=0
+run_quiet "resolving dependencies…" $PYTHON -m pip download \
+    "${DEPS[@]}" --no-cache-dir -d "$ANALYSIS_DIR-deps" --quiet 2>/dev/null || true
+
+if [ -d "$ANALYSIS_DIR-deps" ]; then
+    for f in "$ANALYSIS_DIR-deps"/*.whl "$ANALYSIS_DIR-deps"/*.tar.gz "$ANALYSIS_DIR-deps"/*.zip; do
+        [ -f "$f" ] || continue
+        fsize=$(stat -c%s "$f" 2>/dev/null || stat -f%z "$f" 2>/dev/null || echo 0)
+        DEP_DL_BYTES=$((DEP_DL_BYTES + fsize))
+    done
+fi
+
+# Total download = direct packages + their dependencies (avoid double-count)
+# Dependencies dir includes the direct packages too, so use that as total
+TOTAL_DL_BYTES=$DEP_DL_BYTES
+
+# Estimate installed size (Python packages typically expand ~2.5x when installed)
+EST_INSTALL_BYTES=$((TOTAL_DL_BYTES * 5 / 2))
+
+# Clean up analysis dir
+rm -rf "$ANALYSIS_DIR" "$ANALYSIS_DIR-deps" 2>/dev/null || true
+
+printf "\n"
+box_top
+box_title "DOWNLOAD SUMMARY"
+box_row "Packages"          "${#DEPS[@]}"
+box_row "Download size"     "$(human_size "$TOTAL_DL_BYTES")"
+box_row "Estimated install" "$(human_size "$EST_INSTALL_BYTES")"
+box_bot
+printf "\n"
+
+# Storage check
+if [ "$DISK_FREE_B" -gt 0 ] 2>/dev/null; then
+    if [ "$DISK_FREE_B" -lt "$EST_INSTALL_BYTES" ] 2>/dev/null; then
+        SHORTFALL=$(( EST_INSTALL_BYTES - DISK_FREE_B ))
+        warn "Low disk space! Need ~$(human_size "$SHORTFALL") more than available"
+        warn "Install may fail — free up space or continue at your own risk"
+    else
+        REMAINING=$(( DISK_FREE_B - EST_INSTALL_BYTES ))
+        ok "Storage OK — $(human_size "$REMAINING") will remain free after install"
+    fi
 fi
 
 end_phase
@@ -226,11 +407,8 @@ fi
 # ── Phase 3 · Python toolchain ──────────────────────────────────────
 begin_phase "Python toolchain"
 
-if command -v python3 >/dev/null 2>&1; then
-    PYTHON=python3
-elif command -v python >/dev/null 2>&1; then
-    PYTHON=python
-else
+# PYTHON already detected in environment section; retry install if missing
+if [ -z "$PYTHON" ] || ! command -v "$PYTHON" >/dev/null 2>&1; then
     if [ "$IS_TERMUX" = true ]; then
         warn "python not found — retrying install"
         run_quiet "installing python…" pkg install -y python || true
@@ -369,18 +547,7 @@ RUSTUP_SHIM
     fi
 fi
 
-# Collect the dependency list
-DEPS=()
-if [ -f "requirements.txt" ]; then
-    while IFS= read -r line || [ -n "$line" ]; do
-        case "$line" in
-            ""|\#*) continue ;;
-        esac
-        DEPS+=("$line")
-    done < requirements.txt
-else
-    DEPS=(cactus-needle flask pyTelegramBotAPI pydantic waitress)
-fi
+# DEPS already populated in Phase 1 (package analysis)
 
 # Install one package at a time so the user sees exactly what is
 # downloading right now, with a live progress indicator.
@@ -478,6 +645,9 @@ box_row "Install dir"   "$INSTALL_DIR"
 box_row "App dir"       "$APP_DIR"
 INSTALLED_TOTAL=${INSTALLED_COUNT:-${#DEPS[@]}}
 box_row "Packages"      "${INSTALLED_TOTAL}/${#DEPS[@]} installed"
+box_row "Download size" "$(human_size "$TOTAL_DL_BYTES")"
+box_row "Install size"  "$(human_size "$EST_INSTALL_BYTES")"
+box_row "Disk free"     "$DISK_FREE (was $DISK_TOTAL total)"
 box_row "Total time"    "${TOTAL}s"
 box_bot
 printf "\n"
