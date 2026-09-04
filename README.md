@@ -2,8 +2,6 @@
 
 A lightweight, modular AI agent for Android/Termux that controls your phone via natural language. Powered by **Needle (14MB)** local LLM.
 
-> 🧑‍💻 Hand-coded by [1dev-hridoy](https://github.com/1dev-hridoy) — see [`AUTHOR.txt`](AUTHOR.txt).
-
 ## Features
 
 - **Natural Language Control** — talk to your phone in plain English
@@ -16,16 +14,19 @@ A lightweight, modular AI agent for Android/Termux that controls your phone via 
 ## Quick Install (Single Command)
 
 **On Android/Termux:**
+
 ```bash
-curl -sL https://raw.githubusercontent.com/1dev-hridoy/MobileAgent/main/harness/install.sh | bash
+curl -sL https://raw.githubusercontent.com/1dev-hridoy/MobileAgent/main/install.sh | bash
 ```
 
 **On Desktop (Linux/macOS):**
+
 ```bash
-curl -sL https://raw.githubusercontent.com/1dev-hridoy/MobileAgent/main/harness/install.sh | bash
+curl -sL https://raw.githubusercontent.com/1dev-hridoy/MobileAgent/main/install.sh | bash
 ```
 
 Or clone manually:
+
 ```bash
 git clone https://github.com/1dev-hridoy/MobileAgent.git
 cd MobileAgent/harness
@@ -49,6 +50,7 @@ python -m harness all            # Web + Telegram together
 > Tip: The installer prints the exact `cd` + activate + run commands at the end — just copy them.
 
 **Manual setup from GitHub (no installer):**
+
 ```bash
 git clone https://github.com/1dev-hridoy/MobileAgent.git
 cd MobileAgent/harness
@@ -60,54 +62,60 @@ python -m harness
 ## Available Tools (27)
 
 ### System
-| Tool | Description |
-|------|-------------|
-| `show_toast` | Display toast notification |
-| `show_notification` | System notification drawer |
-| `get_battery_status` | Battery percentage, health, temp |
-| `set_clipboard` | Copy text to clipboard |
-| `get_clipboard` | Read clipboard content |
+
+| Tool                    | Description                      |
+| ----------------------- | -------------------------------- |
+| `show_toast`            | Display toast notification       |
+| `show_notification`     | System notification drawer       |
+| `get_battery_status`    | Battery percentage, health, temp |
+| `set_clipboard`         | Copy text to clipboard           |
+| `get_clipboard`         | Read clipboard content           |
 | `set_screen_brightness` | Adjust screen brightness (0-255) |
-| `get_volume_info` | Get all volume levels |
-| `set_volume` | Set volume for a stream |
-| `share_content` | Share text/file via share sheet |
+| `get_volume_info`       | Get all volume levels            |
+| `set_volume`            | Set volume for a stream          |
+| `share_content`         | Share text/file via share sheet  |
 
 ### Hardware
-| Tool | Description |
-|------|-------------|
-| `set_torch` | Turn flashlight ON/OFF |
-| `vibrate_device` | Vibrate for N milliseconds |
-| `authenticate_fingerprint` | Fingerprint auth prompt |
-| `get_location` | GPS coordinates |
+
+| Tool                       | Description                |
+| -------------------------- | -------------------------- |
+| `set_torch`                | Turn flashlight ON/OFF     |
+| `vibrate_device`           | Vibrate for N milliseconds |
+| `authenticate_fingerprint` | Fingerprint auth prompt    |
+| `get_location`             | GPS coordinates            |
 
 ### Communication
-| Tool | Description |
-|------|-------------|
-| `send_sms` | Send text message |
-| `make_phone_call` | Dial a phone number |
+
+| Tool               | Description           |
+| ------------------ | --------------------- |
+| `send_sms`         | Send text message     |
+| `make_phone_call`  | Dial a phone number   |
 | `get_sms_messages` | Read recent SMS inbox |
-| `get_contacts` | List phone contacts |
-| `get_call_log` | Recent call history |
+| `get_contacts`     | List phone contacts   |
+| `get_call_log`     | Recent call history   |
 
 ### Media
-| Tool | Description |
-|------|-------------|
-| `take_camera_photo` | Capture photo (back camera) |
-| `text_to_speech` | Speak text aloud |
-| `record_audio_start` | Start mic recording |
-| `record_audio_stop` | Stop mic recording |
+
+| Tool                 | Description                 |
+| -------------------- | --------------------------- |
+| `take_camera_photo`  | Capture photo (back camera) |
+| `text_to_speech`     | Speak text aloud            |
+| `record_audio_start` | Start mic recording         |
+| `record_audio_stop`  | Stop mic recording          |
 
 ### Network
-| Tool | Description |
-|------|-------------|
-| `get_wifi_info` | Current WiFi connection details |
-| `scan_wifi_networks` | Scan nearby WiFi networks |
-| `download_file` | Download file via system manager |
-| `get_telephony_info` | SIM, network, IMEI info |
+
+| Tool                 | Description                      |
+| -------------------- | -------------------------------- |
+| `get_wifi_info`      | Current WiFi connection details  |
+| `scan_wifi_networks` | Scan nearby WiFi networks        |
+| `download_file`      | Download file via system manager |
+| `get_telephony_info` | SIM, network, IMEI info          |
 
 ### Apps
-| Tool | Description |
-|------|-------------|
+
+| Tool       | Description           |
+| ---------- | --------------------- |
 | `open_app` | Launch any app or URL |
 
 ## Project Structure
@@ -157,6 +165,7 @@ def my_custom_tool(param: str):
 ```
 
 Then add it to `tools/__init__.py`:
+
 ```python
 from harness.tools.my_module import my_custom_tool
 
