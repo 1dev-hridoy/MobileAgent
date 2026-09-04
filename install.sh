@@ -203,6 +203,16 @@ if [ "$IS_TERMUX" = true ]; then
         }
     done
 
+    BUILD_PKGS=(rust binutils make clang)
+    info "Installing ${#BUILD_PKGS[@]} build dependencies (Rust, C compiler)…"
+    i=0
+    for pkg in "${BUILD_PKGS[@]}"; do
+        i=$((i + 1))
+        run_quiet "[$i/${#BUILD_PKGS[@]}] installing ${pkg}…" pkg install -y "$pkg" || {
+            warn "pkg install ${pkg} failed — some packages may need proot-distro"
+        }
+    done
+
     end_phase
 else
     begin_phase "System dependencies (desktop)"
@@ -322,6 +332,43 @@ begin_phase "Installing Python packages"
 
 run_quiet "upgrading pip…" $PYTHON -m pip install --upgrade pip -q || true
 
+# On Termux, set up Rust environment so maturin can find the system rustc
+FAILED_DEPS=()
+if [ "$IS_TERMUX" = true ]; then
+    if command -v rustc >/dev/null 2>&1; then
+        ok "Rust: $(rustc --version 2>/dev/null || echo 'found')"
+        # Create a rustup shim so maturin can discover the system rustc.
+        # maturin checks for `rustup` first and gives up when it doesn't
+        # find the target in `rustup target list`.  This shim intercepts
+        # those calls and delegates to the real rustc/cargo.
+        RUSTUP_DIR="${VENV_DIR:+$VENV_DIR/bin}"
+        if [ -z "$RUSTUP_DIR" ] || [ ! -d "$RUSTUP_DIR" ]; then
+            RUSTUP_DIR="$HOME/.cargo/bin"
+        fi
+        mkdir -p "$RUSTUP_DIR"
+        RUSTUP_BIN="$RUSTUP_DIR/rustup"
+        cat > "$RUSTUP_BIN" << 'RUSTUP_SHIM'
+#!/usr/bin/env bash
+# Minimal rustup shim — delegates to system rustc/cargo
+REAL_CARGO=$(command -v cargo 2>/dev/null || echo "/data/data/com.termux/files/usr/bin/cargo")
+REAL_RUSTC=$(command -v rustc 2>/dev/null || echo "/data/data/com.termux/files/usr/bin/rustc")
+case "$1" in
+  run)     shift; cmd="$1"; shift; case "$cmd" in rustc) exec "$REAL_RUSTC" "$@";; cargo) exec "$REAL_CARGO" "$@";; *) exec "$cmd" "$@";; esac;;
+  show)    echo "stable-aarch64-unknown-linux-android"; exit 0;;
+  which)   if [ "$2" = "rustc" ]; then echo "$REAL_RUSTC"; elif [ "$2" = "cargo" ]; then echo "$REAL_CARGO"; fi; exit 0;;
+  target)  if [ "$2" = "list" ]; then echo "aarch64-unknown-linux-android"; exit 0; fi; exec "$REAL_CARGO" rustup "$@";;
+  toolchain) exec "$REAL_CARGO" rustup "$@";;
+  *)       exec "$REAL_CARGO" rustup "$@";;
+esac
+RUSTUP_SHIM
+        chmod +x "$RUSTUP_BIN"
+        export PATH="$RUSTUP_DIR:$PATH"
+        export RUSTUP_HOME="${RUSTUP_HOME:-$HOME/.rustup}"
+        export CARGO_HOME="${CARGO_HOME:-$HOME/.cargo}"
+        ok "Rustup shim installed — maturin can now find system rustc"
+    fi
+fi
+
 # Collect the dependency list
 DEPS=()
 if [ -f "requirements.txt" ]; then
@@ -342,10 +389,10 @@ install_one() {
     base=$(printf '%s' "$spec" | sed 's/[\[;].*$//; s/[<>=!~].*$//')
     if [ -t 2 ]; then
         printf "  ${CYAN}▸${NC} [%d/%d] installing ${BOLD}%s${NC}…\n" "$idx" "$total" "$base"
-        $PYTHON -m pip install "$spec" || { warn "${base}: install failed"; return 1; }
+        $PYTHON -m pip install "$spec" || { warn "${base}: install failed"; FAILED_DEPS+=("$spec"); return 1; }
     else
         run_quiet "[$idx/$total] installing ${base}…" $PYTHON -m pip install "$spec" -q || {
-            warn "${base}: install failed"; return 1
+            warn "${base}: install failed"; FAILED_DEPS+=("$spec"); return 1
         }
     fi
     ver=$($PYTHON -c "import importlib.metadata as m; print(m.version('${base}'))" 2>/dev/null || true)
@@ -364,7 +411,41 @@ if [ "${#DEPS[@]}" -gt 0 ]; then
         i=$((i + 1))
         install_one "$i" "${#DEPS[@]}" "$spec" || true
     done
-    ok "Installed ${#DEPS[@]} Python package(s)"
+
+    # Retry failed packages (Rust/clang may now be available)
+    if [ "${#FAILED_DEPS[@]}" -gt 0 ]; then
+        printf "\n  ${YELLOW}${BOLD}↻${NC} retrying ${#FAILED_DEPS[@]} failed package(s) with build tools available…\n"
+        RETRY_FAILED=()
+        for spec in "${FAILED_DEPS[@]}"; do
+            base=$(printf '%s' "$spec" | sed 's/[\[;].*$//; s/[<>=!~].*$//')
+            if [ -t 2 ]; then
+                printf "  ${CYAN}▸${NC} retrying ${BOLD}%s${NC}…\n" "$base"
+                $PYTHON -m pip install "$spec" || { RETRY_FAILED+=("$spec"); continue; }
+            else
+                run_quiet "retrying ${base}…" $PYTHON -m pip install "$spec" -q || {
+                    RETRY_FAILED+=("$spec"); continue
+                }
+            fi
+            ver=$($PYTHON -c "import importlib.metadata as m; print(m.version('${base}'))" 2>/dev/null || true)
+            if [ -n "$ver" ]; then
+                ok "${base} ${ver} (retry succeeded)"
+            else
+                ok "${base} (retry succeeded)"
+            fi
+        done
+        if [ "${#RETRY_FAILED[@]}" -gt 0 ]; then
+            warn "${#RETRY_FAILED[@]} package(s) still failed: ${RETRY_FAILED[*]}"
+        fi
+    fi
+
+    INSTALLED_COUNT=0
+    for spec in "${DEPS[@]}"; do
+        base=$(printf '%s' "$spec" | sed 's/[\[;].*$//; s/[<>=!~].*$//')
+        if $PYTHON -c "import importlib.metadata as m; print(m.version('${base}'))" >/dev/null 2>&1; then
+            INSTALLED_COUNT=$((INSTALLED_COUNT + 1))
+        fi
+    done
+    ok "Installed ${INSTALLED_COUNT}/${#DEPS[@]} Python package(s)"
 else
     info "No Python packages to install (empty requirements.txt)"
 fi
@@ -395,7 +476,8 @@ box_row "Platform"      "$PLATFORM"
 box_row "Python"        "$PY_VER"
 box_row "Install dir"   "$INSTALL_DIR"
 box_row "App dir"       "$APP_DIR"
-box_row "Packages"      "${#DEPS[@]} installed"
+INSTALLED_TOTAL=${INSTALLED_COUNT:-${#DEPS[@]}}
+box_row "Packages"      "${INSTALLED_TOTAL}/${#DEPS[@]} installed"
 box_row "Total time"    "${TOTAL}s"
 box_bot
 printf "\n"
