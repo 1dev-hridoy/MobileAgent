@@ -175,14 +175,6 @@ if [ -f /proc/meminfo ]; then
     [ -n "$RAM_AVAIL" ] && RAM_AVAIL_HUMAN=$(human_size $((RAM_AVAIL * 1024)))
 fi
 
-# Python version (early detection)
-PYTHON_VER=""
-if command -v python3 >/dev/null 2>&1; then
-    PYTHON_VER=$(python3 --version 2>&1 | awk '{print $2}')
-elif command -v python >/dev/null 2>&1; then
-    PYTHON_VER=$(python --version 2>&1 | awk '{print $2}')
-fi
-
 # Python version (early detection — needed for package analysis)
 PYTHON=""
 PYTHON_VER=""
@@ -416,9 +408,11 @@ if [ -z "$PYTHON" ] || ! command -v "$PYTHON" >/dev/null 2>&1; then
     else
         fail "Python not found. Install Python 3.8+ first."
     fi
+    # Refresh version after potential install
+    PYTHON_VER=$($PYTHON --version 2>&1 | awk '{print $2}')
 fi
 
-PY_VER=$($PYTHON --version 2>&1 || echo "?")
+PY_VER=$PYTHON_VER
 ok "Python: $PY_VER"
 
 if ! $PYTHON -m pip --version >/dev/null 2>&1; then
