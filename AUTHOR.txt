@@ -1,0 +1,11 @@
+========================================================
+  ⬡ HARNESS — Mobile Agent
+  Author: 1dev-hridoy
+  Repo:   https://github.com/1dev-hridoy/MobileAgent
+========================================================
+
+This project was designed, coded, and tested by hand.
+It is a human-made project — no AI wrote the code here.
+
+If you found this useful, a star on the repo means a lot.
+Thanks for using Harness!
